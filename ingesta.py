@@ -30,3 +30,35 @@ def ejecutar_ingesta(ruta_origen='ventas_datamart.csv'):
             
         # Cargar el dataset interpretando todas las columnas como cadenas de texto
         df = pd.read_csv(ruta_origen, dtype=str)
+
+        print("\n" + "="*60)
+        print(" DIAGNÓSTICO ESTADÍSTICO INICIAL (ETAPA 1: INGESTA)")
+        print("="*60)
+        print(f"Dimensiones del DataFrame: {df.shape}")
+        print("\nTipos de datos por columna: ")
+        print(df.dtypes)
+        print("\nEstructura general del DataFrame: ")
+        df.info()
+        print("\nConteo de valores nulos por columna: ")
+        print(df.isnull().sum())
+        print("="*60 + "\n")
+        
+        # Guardar la copia exacta del archivo original en la ruta de datos crudos
+        ruta_destino = 'data/raw/ventas_raw.csv'
+        df.to_csv(ruta_destino, index=False)
+        logger.info(f"Copia intacta guardada en: {ruta_destino}")
+        
+        # Registrar metadatos finales del procesamiento en el archivo log
+        logger.info(f"Archivo fuente procesado: {ruta_origen}")
+        logger.info(f"Registros totales cargados: {len(df)}")
+        logger.info("Etapa de ingesta finalizada exitosamente.")
+        return df
+    
+    except Exception as e:
+        # Capturar cualquier fallo en el proceso, registrarlo en el log y relanzar el error
+        logger.error(f"Error crítico durante la etapa de ingesta: {str(e)}")
+        raise e
+
+if __name__ == "__main__":
+    # Permitir la ejecución directa del archivo para pruebas individuales
+    ejecutar_ingesta()
