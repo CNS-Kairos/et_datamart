@@ -23,3 +23,10 @@ def ejecutar_ingesta(ruta_origen='ventas_datamart.csv'):
 
     logger.info("Iniciando la etapa de ingesta...")
 
+    try:
+        # Verificar si el archivo original existe en la ruta especificada
+        if not os.path.exists(ruta_origen):
+            raise FileNotFoundError(f"No se encontró el archivo original en la ruta: {ruta_origen}")
+            
+        # Cargar el dataset interpretando todas las columnas como cadenas de texto
+        df = pd.read_csv(ruta_origen, dtype=str)
