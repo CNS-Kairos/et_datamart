@@ -3,7 +3,7 @@ import sys
 
 # Importar las funciones de las etapas del pipeline
 from src.ingesta import ejecutar_ingesta
-
+from src.limpieza import ejecutar_limpieza
 
 def main():
     print("============================================================")
@@ -19,7 +19,8 @@ def main():
 
         # Etapa 2: Limpieza y Transformación (Placeholder)
         print("[PIPELINE] Etapa 2: Limpieza y Transformación -> ESPERANDO INTEGRACIÓN")
-        print("-" * 60 + "\n")
+        df_clean = ejecutar_limpieza()
+        print("[PIPELINE] Etapa 2 finalizada con éxito.\n")
         
         # Etapa 3: Validación (Placeholder)
         print("[PIPELINE] Etapa 3: Validación con Pandera -> ESPERANDO INTEGRACIÓN")
