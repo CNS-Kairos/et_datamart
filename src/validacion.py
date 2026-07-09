@@ -3,6 +3,8 @@ ETAPA 3 · VALIDACION
 Caso: DataMart Chile S.A. — Pipeline de Datos E-Commerce
 
 Carga el dataset limpio (salida de la etapa de limpieza) y aplica la
+validacion estructural con un esquema pandera (tipos, rangos y dominios)
+y la validacion semantica (reglas de negocio).
 """
 
 import os
@@ -40,7 +42,6 @@ def configurar_logger():
 # ============================================================
 # VALIDACION ESTRUCTURAL (ESQUEMA PANDERA)
 # Reglas de TIPO, RANGO y DOMINIO sobre las columnas.
-#
 # ============================================================
 def construir_esquema_estructural():
     """Devuelve el DataFrameSchema de pandera con las validaciones estructurales."""
@@ -105,9 +106,39 @@ def validar_estructura(df, logger):
 
 
 # ============================================================
+# VALIDACION SEMANTICA (REGLAS DE NEGOCIO)
+# Reglas que dependen de la logica del negocio, no solo del tipo de dato.
+# ============================================================
+def validar_semantica(df, logger):
+    """
+    Aplica las reglas de negocio y devuelve un diccionario indice -> lista de
+    motivos, ademas del conteo por regla para el log.
+    """
+    motivos = {}
+    conteo_por_regla = {}
+
+    def registrar(mascara, etiqueta):
+        idxs = df.index[mascara].tolist()
+        conteo_por_regla[etiqueta] = len(idxs)
+        for i in idxs:
+            motivos.setdefault(i, []).append(etiqueta)
+        logger.info(f"[SEMANTICA] {etiqueta}: {len(idxs)} registro(s) invalido(s).")
+
+    # Regla 1: un pedido 'entregado' DEBE tener fecha_despacho (no nula ni vacia)
+    fecha_vacia = df['fecha_despacho'].isna() | (df['fecha_despacho'].astype(str).str.strip() == '')
+    regla_1 = (df['estado_pedido'].astype(str).str.lower() == 'entregado') & fecha_vacia
+    registrar(regla_1, "entregado_sin_fecha_despacho")
+
+    # Regla 2: la region de despacho no puede quedar sin asignar (nula o vacia)
+    region_vacia = df['region'].isna() | (df['region'].astype(str).str.strip() == '')
+    registrar(region_vacia, "region_nula")
+
+    return motivos, conteo_por_regla
+
+
+# ============================================================
 # ORQUESTADOR DE LA ETAPA DE VALIDACION
-# Encadena: carga -> validacion estructural.
-# 
+# Encadena: carga -> validacion estructural -> validacion semantica.
 # ============================================================
 def ejecutar_validacion(ruta_clean='data/clean/ventas_clean.csv'):
     logger = configurar_logger()
@@ -127,22 +158,28 @@ def ejecutar_validacion(ruta_clean='data/clean/ventas_clean.csv'):
         # Validacion estructural con pandera
         indices_estructurales, conteo_estructural = validar_estructura(df, logger)
 
+        # Validacion semantica (reglas de negocio)
+        motivos_semanticos, conteo_semantico = validar_semantica(df, logger)
+
         print("\n" + "=" * 60)
-        print(" ETAPA 3: VALIDACION ESTRUCTURAL")
+        print(" ETAPA 3: VALIDACION ESTRUCTURAL + SEMANTICA")
         print("=" * 60)
         print(f"Registros evaluados            : {len(df)}")
         print(f"Registros con fallas estruct.  : {len(indices_estructurales)}")
+        print(f"Registros con fallas semant.   : {len(motivos_semanticos)}")
         print("\nErrores estructurales por tipo:")
         for k, v in conteo_estructural.items():
             print(f"  - {k}: {v}")
+        print("\nErrores semanticos por regla:")
+        for k, v in conteo_semantico.items():
+            print(f"  - {k}: {v}")
         print("=" * 60 + "\n")
 
-        logger.info("Validacion estructural finalizada.")
-        return df, indices_estructurales
+        logger.info("Validacion estructural y semantica finalizada.")
+        return df, indices_estructurales, motivos_semanticos
 
     except Exception as e:
         logger.error(f"Error critico durante la etapa de validacion: {str(e)}")
-        #v2
         raise e
 
 
