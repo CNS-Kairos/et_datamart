@@ -3,7 +3,9 @@ ETAPA 4 · CARGA A BASE DE DATOS (SQLite)
 Caso: DataMart Chile S.A. — Pipeline de Datos E-Commerce
 
 Toma los registros validados (data/validated/ventas_validated.csv), se conecta
-a una base SQLite y crea la tabla 'pedidos' con su esquema (PK, tipos, NOT NULL).
+a una base SQLite, crea la tabla 'pedidos' con su esquema (PK, tipos, NOT NULL)
+y carga los registros dentro de una transaccion ACID (COMMIT / ROLLBACK),
+enviando los rechazados por la base a data/errors/rechazados_bd.csv.
 """
 
 import os
@@ -82,9 +84,61 @@ def crear_tabla(conn, logger):
 
 
 # ============================================================
+# CARGA TRANSACCIONAL (ACID)
+# Inserta los registros validados dentro de una unica transaccion.
+# Si todo sale bien -> COMMIT; ante un error inesperado -> ROLLBACK.
+# Las filas que la propia base rechace (PK/NOT NULL) se envian a
+# data/errors/rechazados_bd.csv sin abortar el resto de la carga.
+# ============================================================
+def cargar_datos(conn, df, logger):
+    columnas = [
+        'id_pedido', 'fecha_pedido', 'rut_cliente', 'nombre_cliente', 'region',
+        'producto', 'categoria', 'cantidad', 'precio_unitario', 'descuento_pct',
+        'estado_pedido', 'fecha_despacho', 'total_venta', 'segmento_precio'
+    ]
+    insert_sql = (
+        "INSERT INTO pedidos ("
+        + ", ".join(columnas)
+        + ") VALUES (" + ", ".join(["?"] * len(columnas)) + ")"
+    )
+
+    rechazados = []
+    insertados = 0
+
+    try:
+        for _, fila in df.iterrows():
+            # Convertir los NaN de pandas a None para que SQLite los trate como NULL
+            valores = tuple(None if pd.isna(fila[c]) else fila[c] for c in columnas)
+            try:
+                conn.execute(insert_sql, valores)
+                insertados += 1
+            except sqlite3.IntegrityError as err:
+                # La fila viola una restriccion de la tabla (PK duplicada, NOT NULL, etc.)
+                registro = fila.to_dict()
+                registro['motivo_rechazo_bd'] = str(err)
+                rechazados.append(registro)
+
+        # COMMIT: se confirma la transaccion completa
+        conn.commit()
+        logger.info(f"Transaccion confirmada (COMMIT). Registros insertados: {insertados}.")
+
+    except Exception as err:
+        # ROLLBACK: ante cualquier error inesperado se revierte toda la transaccion
+        conn.rollback()
+        logger.error(f"Error en la carga; se revirtio la transaccion (ROLLBACK): {err}")
+        raise
+
+    # Exportar las filas rechazadas por la base de datos
+    df_rechazados = pd.DataFrame(rechazados)
+    df_rechazados.to_csv(RUTA_RECHAZADOS, index=False)
+    logger.info(f"Registros rechazados por la BD: {len(rechazados)} -> {RUTA_RECHAZADOS}")
+
+    return insertados, len(rechazados)
+
+
+# ============================================================
 # ORQUESTADOR DE LA ETAPA DE CARGA
-# Por ahora: conectar -> crear tabla.
-# (La carga transaccional y la consulta se agregan en los siguientes commits.)
+# Encadena: conectar -> crear tabla -> carga transaccional.
 # ============================================================
 def ejecutar_carga(ruta_validados=RUTA_VALIDADOS, ruta_db=RUTA_DB):
     logger = configurar_logger()
@@ -98,17 +152,24 @@ def ejecutar_carga(ruta_validados=RUTA_VALIDADOS, ruta_db=RUTA_DB):
                 "Debe ejecutarse primero la etapa de validacion."
             )
 
+        # Cargar el dataset validado y asegurar tipos consistentes con el esquema
+        df = pd.read_csv(ruta_validados)
+        df['cantidad'] = pd.to_numeric(df['cantidad'], errors='coerce').astype('Int64')
+        logger.info(f"Registros validados a cargar: {len(df)}")
+
         conn = conectar_db(ruta_db, logger)
         crear_tabla(conn, logger)
+        insertados, n_rechazados = cargar_datos(conn, df, logger)
 
         print("\n" + "=" * 60)
-        print(" ETAPA 4: CARGA — CONEXION Y ESQUEMA")
+        print(" ETAPA 4: CARGA A BASE DE DATOS (SQLite)")
         print("=" * 60)
-        print(f"Base de datos      : {ruta_db}")
-        print("Tabla 'pedidos'    : creada")
+        print(f"Base de datos          : {ruta_db}")
+        print(f"Registros insertados   : {insertados}")
+        print(f"Rechazados por la BD   : {n_rechazados}")
         print("=" * 60 + "\n")
 
-        logger.info("Conexion y creacion de tabla finalizadas.")
+        logger.info("Carga transaccional finalizada.")
 
     except Exception as e:
         logger.error(f"Error critico durante la etapa de carga: {str(e)}")
@@ -119,5 +180,5 @@ def ejecutar_carga(ruta_validados=RUTA_VALIDADOS, ruta_db=RUTA_DB):
 
 
 if __name__ == "__main__":
-    # Permite ejecutar la etapa de carga de forma independiente para pruebas
+   
     ejecutar_carga()
