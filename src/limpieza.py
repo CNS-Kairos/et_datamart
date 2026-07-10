@@ -3,12 +3,13 @@
 # Caso: DataMart Chile S.A. — Pipeline de Datos E-Commerce
 # =============================================================================
 
+import re
 import logging
 import pandas as pd
 from pathlib import Path
 
 # ─── Rutas del proyecto (relativas al directorio de ejecución) ───────────────
-BASE_DIR = Path.cwd()                              
+BASE_DIR = Path.cwd()
 RAW_DIR = BASE_DIR / "data" / "raw"
 CLEAN_DIR = BASE_DIR / "data" / "clean"
 
@@ -70,6 +71,16 @@ def limpiar_nombre(nombre):
     return str(nombre).strip().title()
 
 
+def limpiar_rut(rut):
+    """Normaliza el RUT a formato sin puntos y con guión: 12345678-9."""
+    if pd.isna(rut) or str(rut).strip() == '':
+        return None
+    r = re.sub(r'[^0-9kK]', '', str(rut)).upper()   # deja solo dígitos y K
+    if len(r) < 2:
+        return None
+    return f"{r[:-1]}-{r[-1]}"                        # cuerpo + guión + dígito verificador
+
+
 def ejecutar_limpieza(
     ruta_origen: str = None,
     ruta_destino: str = None
@@ -110,10 +121,11 @@ def ejecutar_limpieza(
         df['categoria'] = df['categoria'].apply(estandarizar_categoria)
         logger.info("Categorías estandarizadas")
 
-        # 6. Textos
+        # 6. Textos y RUT
         df['producto'] = df['producto'].str.strip()
         df['nombre_cliente'] = df['nombre_cliente'].apply(limpiar_nombre)
-        logger.info("Textos limpiados")
+        df['rut_cliente'] = df['rut_cliente'].apply(limpiar_rut)
+        logger.info("Textos y RUT normalizados")
 
         # 7. Conversión numérica
         df['cantidad'] = pd.to_numeric(df['cantidad'], errors='coerce')
