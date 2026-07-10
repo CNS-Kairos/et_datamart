@@ -1,28 +1,26 @@
 # =============================================================================
 # ETAPA 2 — LIMPIEZA Y TRANSFORMACIÓN
-# Pipeline TiendaClick · Evaluación Grupal Unidad 2
+# Caso: DataMart Chile S.A. — Pipeline de Datos E-Commerce
 # =============================================================================
 
 import logging
 import pandas as pd
 from pathlib import Path
 
-# ─── Rutas del proyecto (CORREGIDAS) ─────────────────────────────────────────
-BASE_DIR = Path(__file__).resolve().parent.parent   # sube a la raíz del proyecto
+# ─── Rutas del proyecto (relativas al directorio de ejecución) ───────────────
+BASE_DIR = Path.cwd()                              
 RAW_DIR = BASE_DIR / "data" / "raw"
 CLEAN_DIR = BASE_DIR / "data" / "clean"
-LOG_DIR = BASE_DIR / "logs"
 
 # Crear directorios si no existen
 CLEAN_DIR.mkdir(parents=True, exist_ok=True)
-LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 # ─── Logging ─────────────────────────────────────────────────────────────────
 logger = logging.getLogger('limpieza')
 logger.setLevel(logging.INFO)
 
 if not logger.handlers:
-    file_handler = logging.FileHandler(LOG_DIR / 'limpieza.log', encoding='utf-8')
+    file_handler = logging.FileHandler(CLEAN_DIR / 'limpieza.log', encoding='utf-8')
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
