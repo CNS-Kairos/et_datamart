@@ -132,7 +132,7 @@ id_pedido, fecha_pedido, rut_cliente, nombre_cliente, region, producto, categori
 1. **Clonar el repositorio**
 
    ```bash
-   git clone <URL_DEL_REPOSITORIO>
+   git clone <[URL_DEL_REPOSITORIO](https://github.com/CNS-Kairos/et_datamart.git)>
    cd et_datamart
    ```
 
