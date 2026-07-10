@@ -38,6 +38,33 @@ Sistema integral de procesamiento, validación y almacenamiento de datos para un
 
 ---
 
+## Decisiones Técnicas y Errores Encontrados
+
+### Errores detectados en el dataset original
+
+El archivo `ventas_datamart.csv` (316 registros) contenía errores intencionales que el pipeline trata en las distintas etapas:
+
+- 15 pedidos duplicados por `id_pedido`
+- `fecha_pedido` en 3 formatos mezclados (`YYYY-MM-DD`, `DD/MM/YYYY`, `DD-MM-YYYY`)
+- `precio_unitario` como texto con símbolo `$` y separador de miles (`$39.990`)
+- `categoria` con variantes inconsistentes (tech / TECH / tecnología)
+- `cantidad` con valores negativos y en cero (18 casos)
+- `descuento_pct` fuera de rango (mayores a 100, hasta 150; y negativos)
+- `region` sin asignar (35 nulos)
+- `rut_cliente` en formatos mixtos (con y sin puntos ni guión)
+- Pedidos en estado `entregado` sin `fecha_despacho` (12 casos)
+
+**Resultado del pipeline:** de 316 registros → 301 tras deduplicar → **230 válidos** cargados a la base de datos y **71 inválidos** separados en `data/errors/`.
+
+### Decisiones técnicas
+
+- **Base de datos SQLite**: elegida por no requerir instalación ni servidor, soportar transacciones ACID de forma nativa y ser portable (archivo `ventas.db`), lo que garantiza que el pipeline corra en cualquier equipo.
+- **Precio con separador de miles**: el punto en `precio_unitario` se interpreta como separador de miles (`$39.990` → `39990`), no como decimal.
+- **Errores vs. validación**: los valores imposibles (cantidad ≤ 0, descuento fuera de rango) no se eliminan en la limpieza; se conservan para que la etapa de validación los detecte, los separe y deje registrado el motivo de rechazo.
+- **RUT**: se normaliza el formato (sin puntos, con guión) sin validar el dígito verificador, ya que el dataset es sintético.
+
+---
+
 ## Estructura del Repositorio
 
 ```
@@ -212,8 +239,8 @@ Cada etapa genera un log con timestamps y detalle de la ejecución:
 ```
 2026-07-09 10:00:00 - INFO - Iniciando la etapa de ingesta...
 2026-07-09 10:00:01 - INFO - Fechas normalizadas a YYYY-MM-DD
-2026-07-09 10:00:02 - INFO - Validacion estructural: 0 errores.
-2026-07-09 10:00:03 - INFO - Transaccion confirmada (COMMIT). Registros insertados: 42.
+2026-07-09 10:00:02 - INFO - [SEMANTICA] region_nula: 34 registro(s) invalido(s).
+2026-07-09 10:00:03 - INFO - Transaccion confirmada (COMMIT). Registros insertados: 230.
 ```
 
 ---
