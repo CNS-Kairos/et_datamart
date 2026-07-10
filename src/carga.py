@@ -21,7 +21,7 @@ RUTA_RECHAZADOS = 'data/errors/rechazados_bd.csv'
 
 # ============================================================
 # CONFIGURACION DE LOGGING
-# Registra los eventos de la etapa 
+# Registra los eventos de la etapa
 # ============================================================
 def configurar_logger():
     os.makedirs('data/errors', exist_ok=True)
@@ -137,8 +137,42 @@ def cargar_datos(conn, df, logger):
 
 
 # ============================================================
+# CONSULTA SQL DE VERIFICACION
+# Comprueba que los datos quedaron cargados agregando las ventas
+# totales por region y por categoria directamente desde la base.
+# ============================================================
+def consultar_verificacion(conn, logger):
+    logger.info("Ejecutando consultas de verificacion (ventas por region y por categoria)...")
+
+    sql_region = """
+        SELECT region,
+               COUNT(*)                  AS n_pedidos,
+               ROUND(SUM(total_venta), 2) AS ventas_totales
+        FROM pedidos
+        GROUP BY region
+        ORDER BY ventas_totales DESC
+    """
+    sql_categoria = """
+        SELECT categoria,
+               COUNT(*)                  AS n_pedidos,
+               ROUND(SUM(total_venta), 2) AS ventas_totales
+        FROM pedidos
+        GROUP BY categoria
+        ORDER BY ventas_totales DESC
+    """
+
+    ventas_region = pd.read_sql_query(sql_region, conn)
+    ventas_categoria = pd.read_sql_query(sql_categoria, conn)
+    logger.info(
+        f"Verificacion completada: {len(ventas_region)} regiones y "
+        f"{len(ventas_categoria)} categorias con ventas."
+    )
+    return ventas_region, ventas_categoria
+
+
+# ============================================================
 # ORQUESTADOR DE LA ETAPA DE CARGA
-# Encadena: conectar -> crear tabla -> carga transaccional.
+# Encadena: conectar -> crear tabla -> carga transaccional -> verificacion.
 # ============================================================
 def ejecutar_carga(ruta_validados=RUTA_VALIDADOS, ruta_db=RUTA_DB):
     logger = configurar_logger()
@@ -160,6 +194,7 @@ def ejecutar_carga(ruta_validados=RUTA_VALIDADOS, ruta_db=RUTA_DB):
         conn = conectar_db(ruta_db, logger)
         crear_tabla(conn, logger)
         insertados, n_rechazados = cargar_datos(conn, df, logger)
+        ventas_region, ventas_categoria = consultar_verificacion(conn, logger)
 
         print("\n" + "=" * 60)
         print(" ETAPA 4: CARGA A BASE DE DATOS (SQLite)")
@@ -167,9 +202,13 @@ def ejecutar_carga(ruta_validados=RUTA_VALIDADOS, ruta_db=RUTA_DB):
         print(f"Base de datos          : {ruta_db}")
         print(f"Registros insertados   : {insertados}")
         print(f"Rechazados por la BD   : {n_rechazados}")
+        print("\nVentas totales por REGION:")
+        print(ventas_region.to_string(index=False))
+        print("\nVentas totales por CATEGORIA:")
+        print(ventas_categoria.to_string(index=False))
         print("=" * 60 + "\n")
 
-        logger.info("Carga transaccional finalizada.")
+        logger.info("Etapa de carga finalizada exitosamente.")
 
     except Exception as e:
         logger.error(f"Error critico durante la etapa de carga: {str(e)}")
@@ -180,5 +219,5 @@ def ejecutar_carga(ruta_validados=RUTA_VALIDADOS, ruta_db=RUTA_DB):
 
 
 if __name__ == "__main__":
-   
+
     ejecutar_carga()
