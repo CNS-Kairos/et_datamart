@@ -4,7 +4,8 @@ Caso: DataMart Chile S.A. — Pipeline de Datos E-Commerce
 
 Carga el dataset limpio (salida de la etapa de limpieza) y aplica la
 validacion estructural con un esquema pandera (tipos, rangos y dominios)
-y la validacion semantica (reglas de negocio).
+y la validacion semantica (reglas de negocio), separa los registros validos
+de los invalidos y exporta cada grupo a su carpeta con trazabilidad en el log.
 """
 
 import os
@@ -16,7 +17,7 @@ from pandera.pandas import Column, Check, DataFrameSchema
 
 # ============================================================
 # CONFIGURACION DE LOGGING
-# Registra los eventos de la etapa
+# Registra los eventos de la etapa tanto en archivo como en consola.
 # ============================================================
 def configurar_logger():
     os.makedirs('data/validated', exist_ok=True)
@@ -137,8 +138,42 @@ def validar_semantica(df, logger):
 
 
 # ============================================================
+# SEPARACION Y EXPORTACION DE RESULTADOS
+# Cruza los resultados estructurales y semanticos, separa validos e invalidos
+# y exporta cada grupo a su carpeta correspondiente.
+# ============================================================
+def separar_y_exportar(df, indices_estructurales, motivos_semanticos, logger):
+    # Union de todos los indices que fallaron cualquier validacion
+    indices_invalidos = set(indices_estructurales) | set(motivos_semanticos.keys())
+
+    df_validos = df.drop(index=indices_invalidos).copy()
+    df_invalidos = df.loc[sorted(indices_invalidos)].copy()
+
+    # Construir columna 'motivo_rechazo' explicando por que se rechazo cada fila
+    def construir_motivo(idx):
+        motivos = []
+        if idx in indices_estructurales:
+            motivos.append("falla_estructural")
+        motivos.extend(motivos_semanticos.get(idx, []))
+        return "; ".join(motivos)
+
+    if not df_invalidos.empty:
+        df_invalidos['motivo_rechazo'] = [construir_motivo(i) for i in df_invalidos.index]
+
+    ruta_validos = 'data/validated/ventas_validated.csv'
+    ruta_invalidos = 'data/errors/invalidos.csv'
+    df_validos.to_csv(ruta_validos, index=False)
+    df_invalidos.to_csv(ruta_invalidos, index=False)
+
+    logger.info(f"Registros validos guardados en: {ruta_validos} ({len(df_validos)} filas).")
+    logger.info(f"Registros invalidos guardados en: {ruta_invalidos} ({len(df_invalidos)} filas).")
+
+    return df_validos, df_invalidos
+
+
+# ============================================================
 # ORQUESTADOR DE LA ETAPA DE VALIDACION
-# Encadena: carga -> validacion estructural -> validacion semantica.
+# Encadena: carga -> estructural -> semantica -> separacion/exportacion.
 # ============================================================
 def ejecutar_validacion(ruta_clean='data/clean/ventas_clean.csv'):
     logger = configurar_logger()
@@ -161,12 +196,17 @@ def ejecutar_validacion(ruta_clean='data/clean/ventas_clean.csv'):
         # Validacion semantica (reglas de negocio)
         motivos_semanticos, conteo_semantico = validar_semantica(df, logger)
 
+        # Separacion de validos/invalidos y exportacion a sus carpetas
+        df_validos, df_invalidos = separar_y_exportar(
+            df, indices_estructurales, motivos_semanticos, logger
+        )
+
         print("\n" + "=" * 60)
-        print(" ETAPA 3: VALIDACION ESTRUCTURAL + SEMANTICA")
+        print(" RESUMEN DE VALIDACION (ETAPA 3)")
         print("=" * 60)
-        print(f"Registros evaluados            : {len(df)}")
-        print(f"Registros con fallas estruct.  : {len(indices_estructurales)}")
-        print(f"Registros con fallas semant.   : {len(motivos_semanticos)}")
+        print(f"Registros totales evaluados : {len(df)}")
+        print(f"Registros VALIDOS           : {len(df_validos)}")
+        print(f"Registros INVALIDOS         : {len(df_invalidos)}")
         print("\nErrores estructurales por tipo:")
         for k, v in conteo_estructural.items():
             print(f"  - {k}: {v}")
@@ -175,8 +215,8 @@ def ejecutar_validacion(ruta_clean='data/clean/ventas_clean.csv'):
             print(f"  - {k}: {v}")
         print("=" * 60 + "\n")
 
-        logger.info("Validacion estructural y semantica finalizada.")
-        return df, indices_estructurales, motivos_semanticos
+        logger.info("Etapa de validacion finalizada exitosamente.")
+        return df_validos, df_invalidos
 
     except Exception as e:
         logger.error(f"Error critico durante la etapa de validacion: {str(e)}")
@@ -184,5 +224,4 @@ def ejecutar_validacion(ruta_clean='data/clean/ventas_clean.csv'):
 
 
 if __name__ == "__main__":
-    
     ejecutar_validacion()
